@@ -7,6 +7,10 @@ const config_1 = require("../config");
 const ui_1 = require("./ui");
 const applications_1 = require("../storage/applications");
 const mapping_1 = require("../storage/mapping");
+const handlers_1 = require("../voicePoints/handlers");
+const grant_1 = require("../voicePoints/grant");
+const handlers_2 = require("../afk/handlers");
+const weeklyTickets_1 = require("../storage/weeklyTickets");
 const folderLock = new Map();
 async function withFolderLock(key, fn) {
     const prev = folderLock.get(key) ?? Promise.resolve();
@@ -95,13 +99,29 @@ async function handleInteraction(interaction) {
             return await handleButton(interaction);
         }
         if (interaction.isModalSubmit()) {
-            return await handleModalSubmit(interaction);
+            const modal = interaction;
+            if (modal.customId.startsWith("voice:")) {
+                const handled = await (0, grant_1.handleGrantModal)(modal);
+                if (handled)
+                    return;
+            }
+            if (modal.customId.startsWith("afk:")) {
+                const handled = await (0, handlers_2.handleAfkModal)(modal);
+                if (handled)
+                    return;
+            }
+            return await handleModalSubmit(modal);
         }
     }
     catch (e) {
+        const anyErr = e;
+        const code = anyErr?.code;
+        // Common transient case: interaction expired or Discord API timed out.
+        if (code === 10062 || code === "UND_ERR_CONNECT_TIMEOUT" || anyErr?.name === "ConnectTimeoutError")
+            return;
         console.error(e);
         if (interaction?.isRepliable?.() && !interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: "Ошибка при обработке запроса.", ephemeral: true }).catch(() => { });
+            await interaction.reply({ content: "Ошибка при обработке запроса.", flags: discord_js_1.MessageFlags.Ephemeral }).catch(() => { });
         }
     }
 }
@@ -121,8 +141,27 @@ async function ensureRecordFolderLink(applicationId, folderName, discordChannelI
 }
 async function handleButton(interaction) {
     const customId = interaction.customId;
+    if (customId.startsWith("voice:")) {
+        const handled = await (0, handlers_1.handleVoicePointsButton)(interaction);
+        if (handled)
+            return;
+    }
+    if (customId.startsWith("afk:")) {
+        const handled = await (0, handlers_2.handleAfkButton)(interaction);
+        if (handled)
+            return;
+    }
     if (customId === ui_1.PANEL_APPLY_CUSTOM_ID) {
-        await interaction.showModal((0, ui_1.applicationModal)());
+        try {
+            await interaction.showModal((0, ui_1.applicationModal)());
+        }
+        catch (e) {
+            // If Discord API is timing out / interaction already expired, there's nothing we can do.
+            const code = e?.code;
+            if (code === 10062 || code === "UND_ERR_CONNECT_TIMEOUT" || e?.name === "ConnectTimeoutError")
+                return;
+            throw e;
+        }
         return;
     }
     // Review actions: family:review:<action>:<applicationId>
@@ -133,21 +172,22 @@ async function handleButton(interaction) {
         const guild = interaction.guild;
         if (!guild)
             return;
+        // Acknowledge immediately to avoid "Unknown interaction" on slow API / disk / network.
+        await interaction.deferReply({ flags: discord_js_1.MessageFlags.Ephemeral }).catch(() => { });
         const member = await guild.members.fetch(interaction.user.id).catch(() => null);
         if (!member || !(await isModerator(member))) {
-            await interaction.reply({ content: "У вас нет прав для принятия заявок.", ephemeral: true });
+            await interaction.editReply({ content: "У вас нет прав для принятия заявок." }).catch(() => { });
             return;
         }
         const record = await (0, mapping_1.getApplication)(applicationId);
         if (!record) {
-            await interaction.reply({ content: "Заявка не найдена.", ephemeral: true });
+            await interaction.editReply({ content: "Заявка не найдена." }).catch(() => { });
             return;
         }
         if (record.status === "accepted" || record.status === "rejected") {
-            await interaction.reply({ content: "Эта заявка уже обработана.", ephemeral: true });
+            await interaction.editReply({ content: "Эта заявка уже обработана." }).catch(() => { });
             return;
         }
-        await interaction.deferReply({ ephemeral: true });
         const decisionStatus = action === "accept"
             ? "accepted"
             : action === "reject"
@@ -170,6 +210,13 @@ async function handleButton(interaction) {
         }
         await withFolderLock(folderKey, async () => {
             if (action === "accept" || action === "reject") {
+                await (0, weeklyTickets_1.appendWeeklyTicketEvent)({
+                    guildId: interaction.guild.id,
+                    moderatorUserId: interaction.user.id,
+                    applicationId: record.applicationId,
+                    decision: action === "accept" ? "accepted" : "rejected",
+                    atIso: new Date().toISOString(),
+                }).catch(() => { });
                 await (0, applications_1.deleteApplicationFolder)(record.folderName);
                 await (0, mapping_1.deleteApplication)(record.applicationId);
             }
@@ -181,7 +228,24 @@ async function handleButton(interaction) {
         if (interaction.message && "edit" in interaction.message) {
             const finalDecision = action === "accept" || action === "reject";
             const buttons = (0, ui_1.reviewButtons)(record.applicationId, finalDecision);
-            await interaction.message.edit({ components: [buttons.row] }).catch(() => { });
+            if (finalDecision) {
+                const statusText = action === "accept" ? "Принято" : "Отклонено";
+                const embed = (0, ui_1.reviewEmbed)({
+                    nickLevelAge: record.form.nickLevelAge,
+                    projectPlayTime: record.form.projectPlayTime,
+                    previousFamilies: record.form.previousFamilies,
+                    damageDm10: record.form.damageDm10,
+                    authorTag: `<@${record.discordUserId}>`,
+                    applicationId: record.applicationId,
+                    statusText,
+                    decidedByTag: `<@${interaction.user.id}>`,
+                    decidedAtIso: new Date().toISOString(),
+                });
+                await interaction.message.edit({ components: [buttons.row], embeds: [embed] }).catch(() => { });
+            }
+            else {
+                await interaction.message.edit({ components: [buttons.row] }).catch(() => { });
+            }
         }
         // Log only on final decision
         if (action === "accept" || action === "reject") {
@@ -206,6 +270,8 @@ async function handleButton(interaction) {
                     authorTag: `<@${record.discordUserId}>`,
                     applicationId: record.applicationId,
                     statusText,
+                    decidedByTag: `<@${interaction.user.id}>`,
+                    decidedAtIso: new Date().toISOString(),
                 }).setTitle("Лог заявки (модерация)");
                 await logChannel.send({ embeds: [embed] });
             }
@@ -216,7 +282,7 @@ async function handleButton(interaction) {
 async function handleModalSubmit(interaction) {
     if (interaction.customId !== ui_1.APPLICATION_MODAL_CUSTOM_ID)
         return;
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: discord_js_1.MessageFlags.Ephemeral }).catch(() => { });
     const nickLevelAge = getTextInputValue(interaction, "nick_level_age");
     const projectPlayTime = getTextInputValue(interaction, "project_play_time");
     const previousFamilies = getTextInputValue(interaction, "previous_families");

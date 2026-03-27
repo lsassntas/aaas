@@ -65,9 +65,19 @@ function reviewButtons(applicationId, disabled) {
     };
 }
 function reviewEmbed(payload) {
+    const decidedAt = payload.decidedAtIso ? new Date(payload.decidedAtIso) : null;
+    const decidedAtTs = decidedAt ? Math.floor(decidedAt.getTime() / 1000) : null;
     return new discord_js_1.EmbedBuilder()
         .setTitle("Заявка на вступление в семью")
         .setColor(0x5865f2)
-        .addFields({ name: "Кто подал", value: payload.authorTag ? payload.authorTag : "—", inline: false }, { name: "Ник / уровень / возраст ИРЛ", value: payload.nickLevelAge, inline: false }, { name: "Сколько играете на проекте", value: payload.projectPlayTime, inline: false }, { name: "Были ли в семьях", value: payload.previousFamilies, inline: false }, { name: "Результаты по урону (ДМ 10 минут)", value: payload.damageDm10, inline: false })
+        .addFields({ name: "Кто подал", value: payload.authorTag ? payload.authorTag : "—", inline: false }, { name: "Ник / уровень / возраст ИРЛ", value: payload.nickLevelAge, inline: false }, { name: "Сколько играете на проекте", value: payload.projectPlayTime, inline: false }, { name: "Были ли в семьях", value: payload.previousFamilies, inline: false }, { name: "Результаты по урону (ДМ 10 минут)", value: payload.damageDm10, inline: false }, ...(payload.decidedByTag
+        ? [
+            {
+                name: "Кто принял решение",
+                value: decidedAtTs ? `${payload.decidedByTag}\n<t:${decidedAtTs}:f>` : payload.decidedByTag,
+                inline: false,
+            },
+        ]
+        : []))
         .setFooter({ text: `ApplicationId: ${payload.applicationId} • ${payload.statusText}` });
 }
