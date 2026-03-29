@@ -1,0 +1,51 @@
+[
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "1164981003039821976",
+    "applicationId": "37d9c6cf-abcf-4319-bd0b-6b4acf9dcd4c",
+    "decision": "accepted",
+    "atIso": "2026-03-27T15:43:02.834Z"
+  },
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "328111776426229761",
+    "applicationId": "00d6475f-3c81-4e99-9e95-669ff7f90c8a",
+    "decision": "rejected",
+    "atIso": "2026-03-27T15:43:51.315Z"
+  },
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "1164981003039821976",
+    "applicationId": "00d6475f-3c81-4e99-9e95-669ff7f90c8a",
+    "decision": "accepted",
+    "atIso": "2026-03-27T15:43:51.522Z"
+  },
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "1164981003039821976",
+    "applicationId": "47efac70-f190-40ba-bac1-784901e7f760",
+    "decision": "accepted",
+    "atIso": "2026-03-27T15:54:18.395Z"
+  },
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "1409908956242907176",
+    "applicationId": "a72892ec-daf2-417e-8882-e4abdcaec6e6",
+    "decision": "rejected",
+    "atIso": "2026-03-27T15:57:00.212Z"
+  },
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "1409908956242907176",
+    "applicationId": "7e43e115-de1a-4a1e-850a-29c697cf4a88",
+    "decision": "rejected",
+    "atIso": "2026-03-27T15:57:01.378Z"
+  },
+  {
+    "guildId": "1017444357638475846",
+    "moderatorUserId": "1409908956242907176",
+    "applicationId": "1a27ac5f-c517-424b-b67d-b3e966e9e9e8",
+    "decision": "rejected",
+    "atIso": "2026-03-27T15:57:02.660Z"
+  }
+]
