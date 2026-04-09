@@ -4,11 +4,15 @@ import {
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
   type GuildMember,
   type GuildTextBasedChannel,
   type Message,
+  type ModalSubmitInteraction,
 } from "discord.js";
 import { config } from "../config";
 import {
@@ -18,6 +22,7 @@ import {
   upsertRosterRecord,
   withRpRosterLock,
 } from "../storage/rpRoster";
+import { addBalance } from "../storage/voicePoints";
 
 const RP_EMBED_COLOR = 0x71368a;
 
@@ -26,6 +31,8 @@ const PREFIX_SUB = "rp:s:";
 const PREFIX_LEAVE = "rp:x:";
 const PREFIX_TOGGLE = "rp:t:";
 const PREFIX_RK = "rp:r:";
+const PREFIX_GRANT_MAIN = "rp:g:";
+const GRANT_MAIN_MODAL_PREFIX = "rp:grantmain:";
 
 function parseMessageId(customId: string, prefix: string): string | null {
   if (!customId.startsWith(prefix)) return null;
@@ -137,6 +144,10 @@ export function buildRosterRows(state: RosterRecord): ActionRowBuilder<ButtonBui
       .setCustomId(`${PREFIX_TOGGLE}${mid}`)
       .setLabel(state.open ? "Закрыть список" : "Открыть список")
       .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`${PREFIX_GRANT_MAIN}${mid}`)
+      .setLabel("Выдать баллы основе")
+      .setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2];
 }
@@ -237,6 +248,20 @@ function rkHasRoom(state: RosterRecord): boolean {
   return state.rkUserIds.length < state.rkMax;
 }
 
+function canGrantVoicePoints(member: GuildMember): boolean {
+  const ids = config.VOICE_POINTS_GRANT_ROLE_IDS ?? [];
+  if (ids.length === 0) return false;
+  return ids.some((id) => member.roles.cache.has(id));
+}
+
+function parsePositiveAmount(raw: string): number | null {
+  const n = Number(raw.trim().replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  if (i <= 0) return null;
+  return i;
+}
+
 export async function handleRpRosterButton(interaction: ButtonInteraction): Promise<boolean> {
   const id = interaction.customId;
   let messageId: string | null = null;
@@ -257,9 +282,42 @@ export async function handleRpRosterButton(interaction: ButtonInteraction): Prom
   } else if (id.startsWith(PREFIX_TOGGLE)) {
     mode = "toggle";
     messageId = parseMessageId(id, PREFIX_TOGGLE);
+  } else if (id.startsWith(PREFIX_GRANT_MAIN)) {
+    mode = "toggle";
+    messageId = parseMessageId(id, PREFIX_GRANT_MAIN);
   }
 
   if (!messageId || !mode) return false;
+
+  if (id.startsWith(PREFIX_GRANT_MAIN)) {
+    const guild = interaction.guild;
+    if (!guild) return true;
+    const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+    if (!member || !canGrantVoicePoints(member)) {
+      await interaction.reply({ content: "У вас нет роли для выдачи баллов.", flags: MessageFlags.Ephemeral }).catch(() => {});
+      return true;
+    }
+    const record = await getRosterRecord(messageId);
+    if (!record) {
+      await interaction.reply({ content: "Этот список устарел или удалён.", flags: MessageFlags.Ephemeral }).catch(() => {});
+      return true;
+    }
+    if (record.mainUserIds.length === 0) {
+      await interaction.reply({ content: "В основном списке пока никого нет.", flags: MessageFlags.Ephemeral }).catch(() => {});
+      return true;
+    }
+
+    const modal = new ModalBuilder().setCustomId(`${GRANT_MAIN_MODAL_PREFIX}${messageId}`).setTitle("Выдать баллы основе");
+    const amount = new TextInputBuilder()
+      .setCustomId("amount")
+      .setLabel("Сколько баллов выдать каждому")
+      .setStyle(TextInputStyle.Short)
+      .setMaxLength(12)
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(amount));
+    await interaction.showModal(modal).catch(() => {});
+    return true;
+  }
 
   await interaction.deferUpdate().catch(() => {});
 
@@ -351,6 +409,70 @@ export async function handleRpRosterButton(interaction: ButtonInteraction): Prom
 
   if ("error" in result && result.error) {
     await interaction.followUp({ content: result.error, flags: MessageFlags.Ephemeral }).catch(() => {});
+  }
+
+  return true;
+}
+
+export async function handleRpRosterModal(interaction: ModalSubmitInteraction): Promise<boolean> {
+  if (!interaction.customId.startsWith(GRANT_MAIN_MODAL_PREFIX)) return false;
+  if (!interaction.inGuild() || !interaction.guild) {
+    await interaction.reply({ content: "Команда доступна только на сервере.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    return true;
+  }
+
+  const messageId = parseMessageId(interaction.customId, GRANT_MAIN_MODAL_PREFIX);
+  if (!messageId) {
+    await interaction.reply({ content: "Неверные данные формы.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    return true;
+  }
+
+  const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  if (!member || !canGrantVoicePoints(member)) {
+    await interaction.reply({ content: "У вас нет роли для выдачи баллов.", flags: MessageFlags.Ephemeral }).catch(() => {});
+    return true;
+  }
+
+  const amount = parsePositiveAmount(interaction.fields.getTextInputValue("amount"));
+  if (!amount) {
+    await interaction.reply({ content: "Укажи корректное число баллов (> 0).", flags: MessageFlags.Ephemeral }).catch(() => {});
+    return true;
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
+
+  const grantedUserIds = await withRpRosterLock(messageId, async () => {
+    const record = await getRosterRecord(messageId);
+    if (!record || record.guildId !== interaction.guild!.id) return [] as string[];
+    const ids = [...new Set(record.mainUserIds)];
+    for (const uid of ids) {
+      await addBalance(interaction.guild!.id, uid, amount).catch(() => {});
+    }
+    return ids;
+  });
+
+  if (grantedUserIds.length === 0) {
+    await interaction.editReply("Не удалось выдать баллы: основной список пуст или не найден.").catch(() => {});
+    return true;
+  }
+
+  await interaction
+    .editReply(`Готово. Выдано по **${amount}** баллов всем в основе (**${grantedUserIds.length}** чел.).`)
+    .catch(() => {});
+
+  if (config.VOICE_POINTS_LOG_CHANNEL_ID) {
+    const log = await interaction.client.channels.fetch(config.VOICE_POINTS_LOG_CHANNEL_ID).catch(() => null);
+    if (log && log.isTextBased()) {
+      const textLog = log as any;
+      await textLog
+        .send({
+          content:
+            `Выдача баллов (основа РП): <@${interaction.user.id}> выдал(а) по **${amount}** баллов участникам основного списка: ` +
+            grantedUserIds.map((id) => `<@${id}>`).join(", "),
+          allowedMentions: { users: [interaction.user.id, ...grantedUserIds] },
+        })
+        .catch((e: any) => console.warn("[rp-roster] Failed to send main-list grant log:", e));
+    }
   }
 
   return true;
