@@ -4,6 +4,8 @@ import { addBalance } from "../storage/voicePoints";
 import { isUserAfk } from "../afk/storage";
 
 type SessionKey = string; // `${guildId}:${userId}`
+const VOICE_POINTS_PER_HOUR = 5;
+const MS_IN_HOUR = 60 * 60 * 1000;
 
 function sessionKey(guildId: string, userId: string): SessionKey {
   return `${guildId}:${userId}`;
@@ -47,10 +49,10 @@ export function installVoicePointsTracker(client: Client) {
     sessions.delete(k);
 
     const elapsedMs = Math.max(0, stopMs - start);
-    const minutes = Math.floor(elapsedMs / 60_000);
-    if (minutes <= 0) return;
+    const fullHours = Math.floor(elapsedMs / MS_IN_HOUR);
+    if (fullHours <= 0) return;
 
-    await addBalance(guildId, userId, minutes * config.VOICE_POINTS_PER_MINUTE).catch((e) => {
+    await addBalance(guildId, userId, fullHours * VOICE_POINTS_PER_HOUR).catch((e) => {
       console.error("[voicePoints:tracker] Failed to add balance:", e);
     });
   }
