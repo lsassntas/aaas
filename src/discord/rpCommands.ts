@@ -1,4 +1,5 @@
 import {
+  PermissionFlagsBits,
   MessageFlags,
   REST,
   Routes,
@@ -11,6 +12,7 @@ import { rassylkaSlashCommand } from "./broadcastDm";
 import { createContractPanel } from "./contractPanel";
 import { createRosterPanel } from "./rpRosterPanel";
 import { handleVpzNewsSlashCommand, vpzNewsSlashCommand } from "./vpzNews";
+import { resetAllBalances } from "../storage/voicePoints";
 
 const postavka = new SlashCommandBuilder()
   .setName("postavka")
@@ -32,7 +34,12 @@ const contrakt = new SlashCommandBuilder()
   .setName("contrakt")
   .setDescription("Панель записи в контракт: списание/возврат 150 баллов");
 
-export const rpSlashCommandBuilders = [postavka, vzh, contrakt, rassylkaSlashCommand];
+const voiceResetAll = new SlashCommandBuilder()
+  .setName("voice_reset_all")
+  .setDescription("Обнулить баллы voice points всем участникам сервера")
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+
+export const rpSlashCommandBuilders = [postavka, vzh, contrakt, rassylkaSlashCommand, voiceResetAll];
 // Keep vpz_news in the same guild registration batch.
 rpSlashCommandBuilders.push(vpzNewsSlashCommand);
 
@@ -45,14 +52,34 @@ export async function registerRpGuildCommands(client: Client): Promise<void> {
   const rest = new REST({ version: "10" }).setToken(config.DISCORD_TOKEN);
   const body = rpSlashCommandBuilders.map((c) => c.toJSON());
   await rest.put(Routes.applicationGuildCommands(me.id, config.GUILD_ID), { body });
-  console.log("[rp-commands] Registered /postavka, /vzh, /contrakt, /rassylka for guild", config.GUILD_ID);
+  console.log("[rp-commands] Registered /postavka, /vzh, /contrakt, /rassylka, /voice_reset_all for guild", config.GUILD_ID);
 }
 
 export async function handleRpSlashCommand(interaction: ChatInputCommandInteraction): Promise<boolean> {
   if (interaction.commandName === "vpz_news") return await handleVpzNewsSlashCommand(interaction);
-  if (interaction.commandName !== "postavka" && interaction.commandName !== "vzh" && interaction.commandName !== "contrakt") return false;
+  if (
+    interaction.commandName !== "postavka" &&
+    interaction.commandName !== "vzh" &&
+    interaction.commandName !== "contrakt" &&
+    interaction.commandName !== "voice_reset_all"
+  ) {
+    return false;
+  }
 
   try {
+    if (interaction.commandName === "voice_reset_all") {
+      const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
+      if (!isAdmin) {
+        await interaction.reply({ content: "Команда доступна только администратору.", flags: MessageFlags.Ephemeral });
+        return true;
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const removed = await resetAllBalances(interaction.guildId!);
+      await interaction.editReply(`Готово. Обнулены баллы у **${removed}** пользователей.`);
+      return true;
+    }
+
     if (interaction.commandName === "contrakt") {
       await createContractPanel(interaction);
       return true;
