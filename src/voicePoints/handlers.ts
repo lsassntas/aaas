@@ -1,12 +1,11 @@
 import { MessageFlags, type ButtonInteraction, type GuildTextBasedChannel } from "discord.js";
 import { config } from "../config";
 import { getBalance, subtractBalanceIfEnough } from "../storage/voicePoints";
-import { VOICE_PANEL_BALANCE_ID, VOICE_PANEL_BUY_CONTRACT_PICK_ID, VOICE_PANEL_BUY_REMOVE_JAMB_ID } from "./ui";
+import { VOICE_PANEL_BALANCE_ID, VOICE_PANEL_BUY_REMOVE_JAMB_ID } from "./ui";
 import { VOICE_PANEL_GRANT_ID, handleGrantButton } from "./grant";
 
 const GOODS = {
-  contract_pick: { label: "Пик контракта", cost: 150 },
-  remove_jamb: { label: "Снятие косяка", cost: 250 },
+  remove_jamb: { label: "Снятие косяка", cost: 1000 },
 } as const;
 
 export async function handleVoicePointsButton(interaction: ButtonInteraction): Promise<boolean> {
@@ -44,12 +43,7 @@ export async function handleVoicePointsButton(interaction: ButtonInteraction): P
     return true;
   }
 
-  const buy =
-    id === VOICE_PANEL_BUY_CONTRACT_PICK_ID
-      ? { key: "contract_pick" as const, ...GOODS.contract_pick }
-      : id === VOICE_PANEL_BUY_REMOVE_JAMB_ID
-        ? { key: "remove_jamb" as const, ...GOODS.remove_jamb }
-        : null;
+  const buy = id === VOICE_PANEL_BUY_REMOVE_JAMB_ID ? { key: "remove_jamb" as const, ...GOODS.remove_jamb } : null;
 
   if (!buy) return false;
 
