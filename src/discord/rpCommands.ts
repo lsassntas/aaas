@@ -127,17 +127,35 @@ export async function handleRpSlashCommand(interaction: ChatInputCommandInteract
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       let granted = 0;
+      const grantedUserIds: string[] = [];
       for (const uid of userIds) {
         const member = await interaction.guild?.members.fetch(uid).catch(() => null);
         if (!member) continue;
         await addBalance(interaction.guildId, uid, amount);
         granted += 1;
+        grantedUserIds.push(uid);
       }
 
       await interaction.editReply(
         `Готово. Выдано по **${amount}** баллов ${granted} пользователям.` +
           (reason ? `\nПричина: ${reason}` : ""),
       );
+
+      if (granted > 0 && config.VOICE_POINTS_LOG_CHANNEL_ID) {
+        const log = await interaction.client.channels.fetch(config.VOICE_POINTS_LOG_CHANNEL_ID).catch(() => null);
+        if (log && log.isTextBased()) {
+          const textLog = log as any;
+          const mentions = grantedUserIds.map((id) => `<@${id}>`).join(", ");
+          await textLog
+            .send({
+              content:
+                `Выдача баллов (mass): <@${interaction.user.id}> выдал(а) по **${amount}** баллов пользователям: ${mentions}.` +
+                (reason ? ` Причина: ${reason}` : ""),
+              allowedMentions: { users: [interaction.user.id, ...grantedUserIds] },
+            })
+            .catch((e: any) => console.warn("[voicePoints:log] Failed to send mass grant log:", e));
+        }
+      }
       return true;
     }
 
