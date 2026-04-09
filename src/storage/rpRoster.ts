@@ -24,7 +24,7 @@ async function ensureDir() {
   await fs.mkdir(dataDir, { recursive: true });
 }
 
-export type RosterKind = "postavka" | "vzh";
+export type RosterKind = "postavka" | "vzh" | "poezd";
 
 export type RosterRecord = {
   messageId: string;
