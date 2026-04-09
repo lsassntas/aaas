@@ -30,6 +30,10 @@ const vzh = new SlashCommandBuilder()
   .setName("vzh")
   .setDescription("ВЗХ: 30 в основу, 5 замен, 2 РК — отдельная кнопка «В РК»");
 
+const poezd = new SlashCommandBuilder()
+  .setName("poezd")
+  .setDescription("Поезд: список основы без замен (лимит 100)");
+
 const contrakt = new SlashCommandBuilder()
   .setName("contrakt")
   .setDescription("Панель записи в контракт: списание/возврат 1000 баллов");
@@ -46,7 +50,7 @@ const voiceGrantMany = new SlashCommandBuilder()
   .addIntegerOption((opt) => opt.setName("amount").setDescription("Сколько баллов выдать каждому").setMinValue(1).setRequired(true))
   .addStringOption((opt) => opt.setName("reason").setDescription("Причина (необязательно)").setMaxLength(120).setRequired(false));
 
-export const rpSlashCommandBuilders = [postavka, vzh, contrakt, rassylkaSlashCommand, voiceResetAll, voiceGrantMany];
+export const rpSlashCommandBuilders = [postavka, vzh, poezd, contrakt, rassylkaSlashCommand, voiceResetAll, voiceGrantMany];
 // Keep vpz_news in the same guild registration batch.
 rpSlashCommandBuilders.push(vpzNewsSlashCommand);
 
@@ -86,7 +90,10 @@ export async function registerRpGuildCommands(client: Client): Promise<void> {
   const rest = new REST({ version: "10" }).setToken(config.DISCORD_TOKEN);
   const body = rpSlashCommandBuilders.map((c) => c.toJSON());
   await rest.put(Routes.applicationGuildCommands(me.id, config.GUILD_ID), { body });
-  console.log("[rp-commands] Registered /postavka, /vzh, /contrakt, /rassylka, /voice_reset_all, /voice_grant_many for guild", config.GUILD_ID);
+  console.log(
+    "[rp-commands] Registered /postavka, /vzh, /poezd, /contrakt, /rassylka, /voice_reset_all, /voice_grant_many for guild",
+    config.GUILD_ID,
+  );
 }
 
 export async function handleRpSlashCommand(interaction: ChatInputCommandInteraction): Promise<boolean> {
@@ -94,6 +101,7 @@ export async function handleRpSlashCommand(interaction: ChatInputCommandInteract
   if (
     interaction.commandName !== "postavka" &&
     interaction.commandName !== "vzh" &&
+    interaction.commandName !== "poezd" &&
     interaction.commandName !== "contrakt" &&
     interaction.commandName !== "voice_reset_all" &&
     interaction.commandName !== "voice_grant_many"
@@ -183,6 +191,15 @@ export async function handleRpSlashCommand(interaction: ChatInputCommandInteract
         kind: "postavka",
         postavkaNomer: nomer,
         mainMax: nomer,
+        subMax: null,
+      });
+      return true;
+    }
+
+    if (interaction.commandName === "poezd") {
+      await createRosterPanel(interaction, {
+        kind: "poezd",
+        mainMax: 100,
         subMax: null,
       });
       return true;
