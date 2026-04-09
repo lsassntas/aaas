@@ -48,6 +48,7 @@ async function isModerator(member: GuildMember): Promise<boolean> {
 
 function embedTitle(kind: RosterKind, postavkaNomer?: number): string {
   if (kind === "postavka" && postavkaNomer != null) return `Поставка — слот ${postavkaNomer}`;
+  if (kind === "poezd") return "Поезд";
   return "ВЗХ";
 }
 
@@ -73,19 +74,21 @@ function listLinesRk(userIds: string[]): string {
 
 export function buildRosterEmbed(state: RosterRecord): EmbedBuilder {
   const mainCap = state.mainMax;
-  const subCapLabel = state.subMax == null ? "∞" : String(state.subMax);
   const fields: { name: string; value: string; inline: boolean }[] = [
     {
       name: `Основной список (${state.mainUserIds.length}/${mainCap})`,
       value: listLinesMain(state.mainUserIds),
       inline: false,
     },
-    {
+  ];
+  if (state.kind !== "poezd") {
+    const subCapLabel = state.subMax == null ? "∞" : String(state.subMax);
+    fields.push({
       name: `На замене (${state.subUserIds.length}/${subCapLabel})`,
       value: listLinesSub(state.subUserIds),
       inline: false,
-    },
-  ];
+    });
+  }
 
   if (state.kind === "vzh" && state.rkMax != null) {
     fields.push({
@@ -114,16 +117,15 @@ export function buildRosterEmbed(state: RosterRecord): EmbedBuilder {
 
 export function buildRosterRows(state: RosterRecord): ActionRowBuilder<ButtonBuilder>[] {
   const mid = state.messageId;
-  const row1comps: ButtonBuilder[] = [
-    new ButtonBuilder()
-      .setCustomId(`${PREFIX_MAIN}${mid}`)
-      .setLabel("В основу")
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`${PREFIX_SUB}${mid}`)
-      .setLabel(state.kind === "vzh" ? "В замену" : "В замены")
-      .setStyle(ButtonStyle.Primary),
-  ];
+  const row1comps: ButtonBuilder[] = [new ButtonBuilder().setCustomId(`${PREFIX_MAIN}${mid}`).setLabel("В основу").setStyle(ButtonStyle.Success)];
+  if (state.kind !== "poezd") {
+    row1comps.push(
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX_SUB}${mid}`)
+        .setLabel(state.kind === "vzh" ? "В замену" : "В замены")
+        .setStyle(ButtonStyle.Primary),
+    );
+  }
   if (state.kind === "vzh" && state.rkMax != null) {
     row1comps.push(
       new ButtonBuilder()
