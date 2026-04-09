@@ -15,7 +15,7 @@ import {
   withContractLock,
 } from "../storage/contractRoster";
 
-const CONTRACT_COST = 150;
+const CONTRACT_COST = 1000;
 const JOIN_PREFIX = "contract:j:";
 const LEAVE_PREFIX = "contract:l:";
 
@@ -28,7 +28,7 @@ function contractEmbed(state: ContractRosterRecord): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(0x2b2d31)
     .setTitle("Контракт")
-    .setDescription("Записатся в контракт и снять 150 балов")
+    .setDescription("Записатся в контракт и снять 1000 балов")
     .addFields({
       name: `Список записавшихся (${state.joinedUserIds.length})`,
       value: listJoined(state.joinedUserIds),
