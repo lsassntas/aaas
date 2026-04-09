@@ -21,7 +21,7 @@ import { appendWeeklyTicketEvent } from "../storage/weeklyTickets";
 import { handleRassylkaSlashCommand } from "./broadcastDm";
 import { handleContractButton } from "./contractPanel";
 import { handleRpSlashCommand } from "./rpCommands";
-import { handleRpRosterButton } from "./rpRosterPanel";
+import { handleRpRosterButton, handleRpRosterModal } from "./rpRosterPanel";
 import { handleVpzNewsModal } from "./vpzNews";
 
 const folderLock = new Map<string, Promise<void>>();
@@ -142,6 +142,10 @@ export async function handleInteraction(interaction: any) {
         const handled = await handleAfkModal(modal);
         if (handled) return;
       }
+      if (modal.customId.startsWith("rp:")) {
+        const handled = await handleRpRosterModal(modal);
+        if (handled) return;
+      }
       return await handleModalSubmit(modal);
     }
   } catch (e) {
@@ -180,7 +184,8 @@ async function handleButton(interaction: ButtonInteraction) {
     customId.startsWith("rp:s:") ||
     customId.startsWith("rp:r:") ||
     customId.startsWith("rp:x:") ||
-    customId.startsWith("rp:t:")
+    customId.startsWith("rp:t:") ||
+    customId.startsWith("rp:g:")
   ) {
     const handled = await handleRpRosterButton(interaction);
     if (handled) return;
