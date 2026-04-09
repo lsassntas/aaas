@@ -48,7 +48,7 @@ async function isModerator(member: GuildMember): Promise<boolean> {
 
 function embedTitle(kind: RosterKind, postavkaNomer?: number): string {
   if (kind === "postavka" && postavkaNomer != null) return `Поставка — слот ${postavkaNomer}`;
-  if (kind === "poezd") return "Поезд";
+  if (kind === "poezd") return "Выдача балов";
   return "ВЗХ";
 }
 
