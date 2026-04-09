@@ -32,7 +32,7 @@ const vzh = new SlashCommandBuilder()
 
 const contrakt = new SlashCommandBuilder()
   .setName("contrakt")
-  .setDescription("Панель записи в контракт: списание/возврат 150 баллов");
+  .setDescription("Панель записи в контракт: списание/возврат 1000 баллов");
 
 const voiceResetAll = new SlashCommandBuilder()
   .setName("voice_reset_all")
