@@ -12,7 +12,7 @@ import { rassylkaSlashCommand } from "./broadcastDm";
 import { createContractPanel } from "./contractPanel";
 import { createRosterPanel } from "./rpRosterPanel";
 import { handleVpzNewsSlashCommand, vpzNewsSlashCommand } from "./vpzNews";
-import { resetAllBalances } from "../storage/voicePoints";
+import { addBalance, resetAllBalances } from "../storage/voicePoints";
 
 const postavka = new SlashCommandBuilder()
   .setName("postavka")
@@ -39,9 +39,43 @@ const voiceResetAll = new SlashCommandBuilder()
   .setDescription("Обнулить баллы voice points всем участникам сервера")
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
-export const rpSlashCommandBuilders = [postavka, vzh, contrakt, rassylkaSlashCommand, voiceResetAll];
+const voiceGrantMany = new SlashCommandBuilder()
+  .setName("voice_grant_many")
+  .setDescription("Выдать баллы нескольким участникам (по упоминаниям)")
+  .addStringOption((opt) => opt.setName("users").setDescription("Список @упоминаний или ID через пробел/запятую").setRequired(true))
+  .addIntegerOption((opt) => opt.setName("amount").setDescription("Сколько баллов выдать каждому").setMinValue(1).setRequired(true))
+  .addStringOption((opt) => opt.setName("reason").setDescription("Причина (необязательно)").setMaxLength(120).setRequired(false));
+
+export const rpSlashCommandBuilders = [postavka, vzh, contrakt, rassylkaSlashCommand, voiceResetAll, voiceGrantMany];
 // Keep vpz_news in the same guild registration batch.
 rpSlashCommandBuilders.push(vpzNewsSlashCommand);
+
+function hasVoiceGrantRole(interaction: ChatInputCommandInteraction): boolean {
+  const roleIds = config.VOICE_POINTS_GRANT_ROLE_IDS ?? [];
+  if (roleIds.length === 0) return false;
+  const member = interaction.member;
+  if (!member || !("roles" in member)) return false;
+  const memberRoleIds = (member.roles as any)?.cache;
+  if (!memberRoleIds) return false;
+  return roleIds.some((id) => memberRoleIds.has(id));
+}
+
+function parseMentionOrIdList(raw: string): string[] {
+  const out = new Set<string>();
+  const tokens = raw
+    .split(/[\s,;\n]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const t of tokens) {
+    const mention = t.match(/^<@!?(\d+)>$/);
+    if (mention?.[1]) {
+      out.add(mention[1]);
+      continue;
+    }
+    if (/^\d+$/.test(t)) out.add(t);
+  }
+  return [...out];
+}
 
 export async function registerRpGuildCommands(client: Client): Promise<void> {
   const me = client.user;
@@ -52,7 +86,7 @@ export async function registerRpGuildCommands(client: Client): Promise<void> {
   const rest = new REST({ version: "10" }).setToken(config.DISCORD_TOKEN);
   const body = rpSlashCommandBuilders.map((c) => c.toJSON());
   await rest.put(Routes.applicationGuildCommands(me.id, config.GUILD_ID), { body });
-  console.log("[rp-commands] Registered /postavka, /vzh, /contrakt, /rassylka, /voice_reset_all for guild", config.GUILD_ID);
+  console.log("[rp-commands] Registered /postavka, /vzh, /contrakt, /rassylka, /voice_reset_all, /voice_grant_many for guild", config.GUILD_ID);
 }
 
 export async function handleRpSlashCommand(interaction: ChatInputCommandInteraction): Promise<boolean> {
@@ -61,12 +95,52 @@ export async function handleRpSlashCommand(interaction: ChatInputCommandInteract
     interaction.commandName !== "postavka" &&
     interaction.commandName !== "vzh" &&
     interaction.commandName !== "contrakt" &&
-    interaction.commandName !== "voice_reset_all"
+    interaction.commandName !== "voice_reset_all" &&
+    interaction.commandName !== "voice_grant_many"
   ) {
     return false;
   }
 
   try {
+    if (interaction.commandName === "voice_grant_many") {
+      if (!interaction.guildId) return true;
+      if (!hasVoiceGrantRole(interaction)) {
+        await interaction.reply({
+          content: "У вас нет роли для выдачи баллов.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      const usersRaw = interaction.options.getString("users", true);
+      const amount = interaction.options.getInteger("amount", true);
+      const reason = interaction.options.getString("reason")?.trim();
+      const userIds = parseMentionOrIdList(usersRaw);
+
+      if (userIds.length === 0) {
+        await interaction.reply({
+          content: "Не удалось распознать пользователей. Укажи @упоминания или ID.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      let granted = 0;
+      for (const uid of userIds) {
+        const member = await interaction.guild?.members.fetch(uid).catch(() => null);
+        if (!member) continue;
+        await addBalance(interaction.guildId, uid, amount);
+        granted += 1;
+      }
+
+      await interaction.editReply(
+        `Готово. Выдано по **${amount}** баллов ${granted} пользователям.` +
+          (reason ? `\nПричина: ${reason}` : ""),
+      );
+      return true;
+    }
+
     if (interaction.commandName === "voice_reset_all") {
       const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
       if (!isAdmin) {
