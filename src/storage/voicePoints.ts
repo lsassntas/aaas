@@ -90,3 +90,18 @@ export async function subtractBalanceIfEnough(
   });
 }
 
+export async function resetAllBalances(guildId: string): Promise<number> {
+  return await withFileLock(async () => {
+    const data = await readAll();
+    const prefix = `${guildId}:`;
+    let removed = 0;
+    for (const k of Object.keys(data.balances)) {
+      if (!k.startsWith(prefix)) continue;
+      delete data.balances[k];
+      removed += 1;
+    }
+    await writeAll(data);
+    return removed;
+  });
+}
+
